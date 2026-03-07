@@ -25,22 +25,68 @@ generate_grid_colors <- function(network_grids, case_list) {
   return(color_vector)
 }
 
+# Read the phenotype file if it is provided. We will return a
+# hash env where the keys are ids and the values are the phenotype
+# status (or variant they carry if that is the provided value)
+load_pheno_file <- function(pheno_filepath) {
+  # Lets first create the hash environment to key all of
+  # our key value pairs
+  pheno_hash <- new.env(hash = TRUE)
+
+  # Lets make sure the pheno_filepath exists
+  if (!file.exists(pheno_filepath)) {
+    stop(paste0("ERROR: The file, ", pheno_filepath, ", does not exist. Terminating program..."), call. = FALSE)
+  }
+
+  lines <- readLines(pheno_filepath, warn = FALSE)
+
+  line_counter <- 1
+  for (line in lines) {
+    # We need to split each line
+    split_line <- unlist(strsplit(trimws(line), "\t"))
+
+    # We also need to make sure the line only has 2 elements like we expect
+    if (length(split_line) != 2) {
+      stop(paste0("ERROR: encountered a malformed line at line, ", line_counter, " : ", line))
+    }
+
+    # We also need to check and make sure that the individual
+    # is not already in the hash. We are assuming each row in
+    # the phenotype file is a unique id
+    if (exists(split_line[1], envir = pheno_hash)) {
+      stop("ERROR: Encountered a duplicate id in the phenotype file. Please ensure that each row in the phenotype file is a unique id")
+    }
+
+    pheno_hash[[split_line[1]]] <- split_line[2]
+  }
+
+  return(pheno_hash)
+}
+# Next lines until "parse_args()" deal with the CLI interface
 option_list <- list(
   make_option(c("-n", "--network"),
     type = "character", default = NULL,
     help = "Input network file", metavar = "character"
   ),
+  make_option(c("-i", "--ibd"),
+    type = "character", default = NULL,
+    help = "IBD file that list the pairwise IBD segments shared between individuals in the cohort. Currently the program only supports the hap-IBD format. This file should be tab separated and shouldn't have a header.", metavar = "character"
+  ),
   make_option(c("-p", "--phenotype"),
     type = "character", default = NULL,
-    help = "Phenotype file", metavar = "character"
+    help = "Tab separated text file that can be used to classify individuals with an affection status (This could be for a phenotype of interest or carriers of a variant. The file should have two columns: 'GRID' and 'Status', where each row is an id and then the corresponding status). If this file is provided then we will ignore the case id status in the DRIVE network file", metavar = "character"
   ),
   make_option("--id",
     type = "character", default = NULL,
-    help = "Network ID", metavar = "character"
+    help = "Network ID from the DRIVE networks file. We will only generate plots for this network. If this id is not found in the file then the program will throw an error.", metavar = "character"
   ),
   make_option("--min-network-size",
     type = "integer", default = 2,
-    help = "Minimum network size to plot [default %default]", metavar = "number"
+    help = "Minimum network size to plot (default %default)", metavar = "number"
+  ),
+  make_option("--pheno-column",
+    type = "character", default = NULL,
+    help = "Phenotype column name in the DRIVE network file (optional). This flag should not be provided if a phenotype file is provided.", metavar = "character"
   ),
   make_option(c("-o", "--output"),
     type = "character", default = "test.png",
@@ -53,14 +99,30 @@ opt_parser <- OptionParser(
 )
 opt <- parse_args(opt_parser)
 
+runtime_state <- list(
+  pheno_hash = NULL
+)
+
 # If the user didn't pass any arguments then we need to print the help message
-if (is.null(opt$network)) {
+if (is.null(opt$network) || is.null(opt$ibd)) {
   print_help(opt_parser)
-  stop()
+  stop("Both --network and --ibd arguments are required.\n", call. = FALSE)
 }
 
-case_files <- list.files(pattern = "*case_list.txt", recursive = TRUE)
-ibd_files <- list.files(pattern = "*filtered_ilash_8_1_23.txt", recursive = TRUE)
+# Check and make sure that the phenotype file and pheno-column arguments
+# were not both provided
+if (!is.null(opt$phenotype) && !is.null(opt$`pheno-column`)) {
+  stop("ERROR: found values for both the '--phenotype' and '--pheno-column' flags. Program expects only 1 of these values to be provided")
+}
+
+# reading in the phenotype file if its provided
+if (!is.null(opt$phenotype)) {
+  print(paste0("Loading in the phenotype file: ", opt$phenotype))
+  runtime_state$pheno_hash <- load_pheno_file(opt$phenotype)
+} else {
+  print(paste0("No phenotype file provided. Using the case status within the DRIVE file column: ", opt$`pheno-column`))
+}
+
 
 for (file in ibd_files) {
   split_filename <- unlist(strsplit(file, "_"))
