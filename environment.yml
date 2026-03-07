@@ -1,0 +1,11 @@
+name: circos
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - r-base=4.5.2
+  - bioconductor-complexheatmap=2.26.1
+  - r-circlize=0.4.17
+  - r-stringr=1.6.0
+  - r-optparse=1.7.5
+  - r-data.table=1.17.8
