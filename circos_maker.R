@@ -2,6 +2,7 @@
 
 suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
+suppressPackageStartupMessages(library(data.table))
 library(stringr)
 library(optparse)
 
@@ -62,6 +63,20 @@ load_pheno_file <- function(pheno_filepath) {
 
   return(pheno_hash)
 }
+
+# main function that will read through the DRIVE networks file to generate a circos plot for each network
+process_network_file <- function(network_filepath, runtime_state) {
+  if (!file.exists(network_filepath)) {
+    stop(paste0("The network file, ", network_filepath, ", was not found on the system. Terminating program"))
+  }
+  # open the file for reading
+  lines <- readLines(network_filepath, warn = False)
+
+  for (line in lines) {
+    # we first
+  }
+}
+##### Script technically will start running here #############
 # Next lines until "parse_args()" deal with the CLI interface
 option_list <- list(
   make_option(c("-n", "--network"),
@@ -93,14 +108,20 @@ option_list <- list(
     help = "Output image path for the circos plot", metavar = "character"
   )
 )
+
 opt_parser <- OptionParser(
   option_list = option_list,
   description = "A tool to generate circos plots for visualizing IBD networks identified by DRIVE."
 )
 opt <- parse_args(opt_parser)
 
+# TODO: Add someway to record what pararmeters are being
+# used in the CLI
+
+# This is a named list that we will use to keep track of things in
+# our program
 runtime_state <- list(
-  pheno_hash = NULL
+  network_id = opt$id
 )
 
 # If the user didn't pass any arguments then we need to print the help message
@@ -123,6 +144,24 @@ if (!is.null(opt$phenotype)) {
   print(paste0("No phenotype file provided. Using the case status within the DRIVE file column: ", opt$`pheno-column`))
 }
 
+# Now we can read in the ibd_data. A dataframe will probably work
+# best for this because we are going to access it by all of the ids
+# in the network
+print(paste0("Loading in the IBD segment data: ", opt$ibd))
+
+runtime_state$ibd_df <- fread(opt$ibd, sep = "\t", header = FALSE)
+
+colnames(runtime_state$ibd_df) <- c("pair_1", "hapID1", "pair_2", "hapID2", "chr", "start", "end", "length")
+
+# Now lets filter our datatable for our cohort of interest.
+# Only do this if the phenotype file was provided
+if (runtime_state$pheno_hash != NULL) {
+  cohort_ids <- ls(runtime_state$pheno_hash)
+
+  runtime_state$ibd_df <- runtime_state$ibd_df[pair_1 %in% cohort_ids & pair_2 %in% cohort_ids]
+}
+
+## Now we can iterate through the DRIVE file
 
 for (file in ibd_files) {
   split_filename <- unlist(strsplit(file, "_"))
