@@ -9,3 +9,4 @@ dependencies:
   - r-stringr=1.6.0
   - r-optparse=1.7.5
   - r-data.table=1.17.8
+  - r-tidyverse=2.0.0

@@ -28,3 +28,5 @@ The script requires the following R libraries:
 - `circlize`
 - `stringr`
 - `optparse`
+- `data.table`
+- `tidyverse`
