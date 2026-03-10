@@ -1,11 +1,10 @@
-#!/usr/bin/env Rscript
-
 suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
 suppressPackageStartupMessages(library(data.table))
 library(stringr)
 library(optparse)
 
+# TODO: convert all readlines calls to open the filepath as a file object first so that it doesn't read all teh data in at once
 find_case_file <- function(case_files, network_id) {
   for (file in case_files) {
     if (str_detect(file, network_id)) {
@@ -39,10 +38,17 @@ load_pheno_file <- function(pheno_filepath) {
     stop(paste0("ERROR: The file, ", pheno_filepath, ", does not exist. Terminating program..."), call. = FALSE)
   }
 
+  con <- file(pheno_filepath, "r")
+  on.exit(close(con))
   lines <- readLines(pheno_filepath, warn = FALSE)
 
   line_counter <- 1
   for (line in lines) {
+    lines <- readLines(pheno_filepath, warn = FALSE)
+    # This condition checks if we are at the end of the file
+    if (length(line) == 0) {
+      break
+    }
     # We need to split each line
     split_line <- unlist(strsplit(trimws(line), "\t"))
 
@@ -64,16 +70,55 @@ load_pheno_file <- function(pheno_filepath) {
   return(pheno_hash)
 }
 
+# We need to map the length column to a value that we can use to color the circos plot
+format_ibd_data_length <- function(ibd_dataframe) {
+  df <- ibd_dataframe %>%
+    mutate(width = case_when(
+      length < 3 ~ "grey",
+      length < 10 ~ "blue",
+      TRUE ~ "red"
+    ))
+  return(df)
+}
+
+define_id_colors <- function(ids, pheno_hash, case_list) {
+  color_vector <- c()
+  for (grid in network_grids) {
+    if (grid %in% case_list) {
+      color_vector <- append(color_vector, "dark red")
+    } else {
+      color_vector <- append(color_vector, "dark gray")
+    }
+  }
+  return(color_vector)
+}
 # main function that will read through the DRIVE networks file to generate a circos plot for each network
 process_network_file <- function(network_filepath, runtime_state) {
   if (!file.exists(network_filepath)) {
     stop(paste0("The network file, ", network_filepath, ", was not found on the system. Terminating program"))
   }
   # open the file for reading
-  lines <- readLines(network_filepath, warn = False)
+  con <- file(network_filepath, "r")
+  on.exit(close(con))
 
   for (line in lines) {
-    # we first
+    lines <- readLines(network_filepath, warn = FALSE)
+
+    # Exit the for loop if there is no value returned from readLines
+    if (length(line) == 0) {
+      break
+    }
+    split_line <- unlist(strsplit(trimws(line), "\t"))
+    # we first need to handle the header
+
+    # The we need to iterate through each network
+    # If we provided a network id then we only need to process that and then break
+    if (!is.null(runtime_state$network_id) && split_line[1] == runtime_state$network_id) {
+      # add logic here
+      break
+    } else if (as.integer(split_line[2]) >= runtime_state$min_network_size) {
+      # add logic to generate circos plot
+    }
   }
 }
 ##### Script technically will start running here #############
@@ -105,7 +150,7 @@ option_list <- list(
   ),
   make_option(c("-o", "--output"),
     type = "character", default = "test.png",
-    help = "Output image path for the circos plot", metavar = "character"
+    help = "Output image path for the circos plot. If the user is making a circos plot for every network in the file. Then the user should give a directory instead of a file name", metavar = "character"
   )
 )
 
@@ -121,7 +166,9 @@ opt <- parse_args(opt_parser)
 # This is a named list that we will use to keep track of things in
 # our program
 runtime_state <- list(
-  network_id = opt$id
+  network_id = opt$id,
+  min_network_size = opt$`min-network-size`,
+  pheno_col = opt$`pheno-column`
 )
 
 # If the user didn't pass any arguments then we need to print the help message
