@@ -30,3 +30,4 @@ The script requires the following R libraries:
 - `optparse`
 - `data.table`
 - `tidyverse`
+- `r.utils`

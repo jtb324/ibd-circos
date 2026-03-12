@@ -10,3 +10,4 @@ dependencies:
   - r-optparse=1.7.5
   - r-data.table=1.17.8
   - r-tidyverse=2.0.0
+  - r-r.utils=2.13.0
