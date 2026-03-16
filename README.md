@@ -18,7 +18,8 @@ A command-line tool for visualizing Identity By Descent (IBD) networks using Cir
 | `--id` | `character` | Specific Network ID to plot. If provided, only this network is processed. | No |
 | `--min-network-size`| `integer` | Minimum number of individuals in a network to generate a plot (Default: 2). | No |
 | `--pheno-column` | `character` | Specific column name in the network file to use for phenotype status. | No |
-| `-o`, `--output` | `character` | Path for the output image (Default: `test.png`). | No |
+| `--save-segments` | N/A | If provided, the IBD segments used for plotting each individual circos plot will be saved in the same output directory as the plots. | No |
+| `-o`, `--output` | `character` | Path for the output directory (Default: `test/`). | No |
 | `-h`, `--help` | N/A | Show the help message and exit. | No |
 
 ## Requirements

@@ -105,6 +105,12 @@ generate_circos_plots <- function(network_id, network_members, cases, runtime_st
     return()
   }
 
+  if (runtime_state$save_segments) {
+    segments_output_name <- paste(runtime_state$output, "/", network_id, "_ibd_segments.txt", sep = "")
+    print(paste("Saving segments to", segments_output_name, sep = " "))
+    fwrite(network_segments, segments_output_name, sep = "\t")
+  }
+
   grid.col <- generate_grid_colors(network_members, runtime_state$pheno_hash, cases)
 
   # Add a column "col" and "width" that tell what color the chords
@@ -229,6 +235,10 @@ option_list <- list(
     type = "character", default = NULL,
     help = "Phenotype column name in the DRIVE network file (optional).", metavar = "character"
   ),
+  make_option("--save-segments",
+    action = "store_true", default = FALSE,
+    help = "Save the IBD segments used for plotting each individual circos plot (default %default)", metavar = "boolean"
+  ),
   make_option(c("-o", "--output"),
     type = "character", default = "test/",
     help = "Output directory that the circos plot will be written to. (default %default)", metavar = "character"
@@ -248,6 +258,7 @@ runtime_state <- list(
   network_id = opt$id,
   min_network_size = opt$`min-network-size`,
   pheno_col = opt$`pheno-column`,
+  save_segments = opt$`save-segments`,
   output = opt$output
 )
 
