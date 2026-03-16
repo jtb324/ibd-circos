@@ -5,9 +5,15 @@ suppressPackageStartupMessages(library(dplyr))
 library(stringr)
 library(optparse)
 
-# Read the phenotype file if it is provided. We will return a
-# hash env where the keys are ids and the values are the phenotype
-# status (or variant they carry if that is the provided value)
+#' Load Phenotype File
+#'
+#' Reads a tab-separated phenotype file and returns an environment (hash map)
+#' where keys are individual IDs and values are their phenotype status.
+#'
+#' @param pheno_filepath Character string. Path to the phenotype file.
+#'
+#' @return An environment containing ID-phenotype key-value pairs.
+#' @export
 load_pheno_file <- function(pheno_filepath) {
   # Lets first create the hash environment to key all of
   # our key value pairs
@@ -50,7 +56,16 @@ load_pheno_file <- function(pheno_filepath) {
   return(pheno_hash)
 }
 
-# We need to map the length column to a value that we can use to color the circos plot
+#' Format IBD Data Length
+#'
+#' Maps IBD segment lengths to specific colors and widths for visualization.
+#' Segments < 3cM are grey, < 10cM are blue, and >= 10cM are red.
+#'
+#' @param ibd_dataframe A data frame containing IBD segment information, 
+#'   including a `length` column.
+#'
+#' @return A data frame with additional `col` and `width` columns.
+#' @export
 format_ibd_data_length <- function(ibd_dataframe) {
   df <- ibd_dataframe %>%
     mutate(
@@ -64,7 +79,15 @@ format_ibd_data_length <- function(ibd_dataframe) {
   return(df)
 }
 
-# Get the index of the phenotype column if the user provided that value
+#' Get Phenotype Column Index
+#'
+#' Finds the index of a specific phenotype column name within a header line.
+#'
+#' @param header_line Character vector. The split header line of a file.
+#' @param pheno_col_name Character string. The name of the phenotype column to find.
+#'
+#' @return Integer. The index of the phenotype column.
+#' @export
 get_case_col_indx <- function(header_line, pheno_col_name) {
   if (length(header_line) <= 1) {
     stop("ERROR: Encountered a malformed header line. Terminating program...", call. = FALSE)
@@ -77,7 +100,17 @@ get_case_col_indx <- function(header_line, pheno_col_name) {
   return(col_indx)
 }
 
-# color grids based on the provided case hash or case list. Both phenotyping options should not be provided at the same time
+#' Generate Grid Colors
+#'
+#' Assigns colors to network members (grids) based on their phenotype status
+#' from a hash or a provided list of cases.
+#'
+#' @param network_grids Character vector. IDs of individuals in the network.
+#' @param pheno_hash Optional environment. Hash map of IDs to phenotypes.
+#' @param case_list Optional character vector. List of IDs considered cases.
+#'
+#' @return A named character vector of colors.
+#' @export
 generate_grid_colors <- function(network_grids, pheno_hash = NULL, case_list = NULL) {
   color_vector <- sapply(network_grids, function(id) {
     if (!is.null(pheno_hash)) {
@@ -96,6 +129,18 @@ generate_grid_colors <- function(network_grids, pheno_hash = NULL, case_list = N
   return(color_vector)
 }
 
+#' Generate Circos Plots
+#'
+#' Creates and saves a circos plot for a specific network, showing IBD connections
+#' between members.
+#'
+#' @param network_id Character string. The identifier for the network.
+#' @param network_members Character vector. IDs of individuals in the network.
+#' @param cases Character vector. IDs of individuals considered cases in this network.
+#' @param runtime_state List. Global state containing IBD data and output configuration.
+#'
+#' @return None. Saves a PNG file to the output directory.
+#' @export
 generate_circos_plots <- function(network_id, network_members, cases, runtime_state) {
   # Filter IBD data for pairs where BOTH are in the network
   network_segments <- runtime_state$ibd_df[pair_1 %in% network_members & pair_2 %in% network_members]
@@ -151,7 +196,15 @@ generate_circos_plots <- function(network_id, network_members, cases, runtime_st
   dev.off()
 }
 
-# main function that will read through the DRIVE networks file to generate a circos plot for each network
+#' Process Network File
+#'
+#' Iterates through a DRIVE network file and generates circos plots for qualifying networks.
+#'
+#' @param network_filepath Character string. Path to the DRIVE network results file.
+#' @param runtime_state List. Global state containing IBD data and configuration.
+#'
+#' @return None.
+#' @export
 process_network_file <- function(network_filepath, runtime_state) {
   if (!file.exists(network_filepath)) {
     stop(paste0("The network file, ", network_filepath, ", was not found on the system. Terminating program"))
