@@ -56,9 +56,10 @@ load_pheno_file <- function(pheno_filepath) {
 # original id and the values are the mapped ids
 load_map_file <- function(mapping_file) {
   map_hash <- new.env(hash = TRUE)
+  reverse_hash_map <- new.env(hash = TRUE)
 
   if (!file.exists(mapping_file)) {
-    stop(paste0("ERROR: The provided mapping file, " mapping_file, ", does not exist. Terminating program..."), call. = FALSE)
+    stop(paste0("ERROR: The provided mapping file, ", mapping_file, ", does not exist. Terminating program..."), call. = FALSE)
   }
   # On the file for streaming and then set on.exit so that the file closes at the end of the function
   con <- file(mapping_file, "r")
@@ -71,19 +72,23 @@ load_map_file <- function(mapping_file) {
 
     split_line <- unlist(strsplit(trimws(lines), "\t"))
 
+    # if the line is empty then we have hit the end of the file 
+    # and need to break out of the loop
+    if (length(lines) == 0) {
+      break
+    }
+
     if (length(split_line) != 2) {
       stop(paste0("ERROR: encountered a malformed line at line, ", line_counter, " : ", lines, ". Expected the first column to be the original ID and the second colum to be the ids that we wish to map values to"))
     }
 
     map_hash[[split_line[1]]] <- split_line[2]
+    reverse_hash_map[[split_line[2]]] <- split_line[1]
 
     line_counter <- line_counter + 1
 
-    if (length(lines) == 0) {
-      break
-    }
   }
-  return(map_hash)
+  return(list(forward_map=map_hash, reverse_map=reverse_hash_map))
 }
 
 # We need to map the length column to a value that we can use to color the circos plot
@@ -135,6 +140,11 @@ generate_grid_colors <- function(network_grids, pheno_hash = NULL, case_list = N
 generate_circos_plots <- function(network_id, network_members, cases, runtime_state) {
   # Filter IBD data for pairs where BOTH are in the network
   network_segments <- runtime_state$ibd_df[pair_1 %in% network_members & pair_2 %in% network_members]
+
+  if (!is.null(runtime_state$mapped_id_list)) {
+    network_segments$pair_1 <- sapply(network_segments$pair_1, function(x) get(x, envir=runtime_state$map_hash))
+    network_segments$pair_2 <- sapply(network_segments$pair_2, function(x) get(x, envir=runtime_state$map_hash))
+  }
 
   if (nrow(network_segments) == 0) {
     print(paste("No IBD segments found for network", network_id))
@@ -189,11 +199,10 @@ generate_circos_plots <- function(network_id, network_members, cases, runtime_st
 
 # Map our ids that we have read in to the new ids. Function takes an array of the current ids and then maps 
 # each id to a new value and returns that array. We return the new array
-map_network_ids <- function(current_ids, mapping_hash) {
-
-  new_array <- sapply(current_array, function(x) {
-    if (exists(x, envir = mapping_env)) {
-      return(mapping_hash[[x]])
+map_ids <- function(current_ids, mapping_hash) {
+  new_array <- sapply(current_ids, function(x, h = mapping_hash) {
+    if (exists(x, envir = h)) {
+      return(h[[x]])
     } else {
       stop(paste0("Missing a mapping id for participant, ", x, ". Please make sure every id has a mapping"))
     }
@@ -244,9 +253,13 @@ process_network_file <- function(network_filepath, runtime_state) {
     network_members <- unlist(strsplit(split_line[7], ","))
 
     # If we have loaded in the mappings then we need to update the network 
-    # members list here
+    # members list here. The order of the mapped ids will be the same as 
+    # the original list
     if (!is.null(runtime_state$map_hash)) {
-      network_members = map_network_ids(network_members, runtime_state$map_hash)
+      mapped_id_list = map_ids(network_members, runtime_state$map_hash)
+      runtime_state$mapped_id_list = mapped_id_list
+    } else {
+      runtime_state$mapped_id_list = NULL
     }
 
     # If we provided a network id then we only need to process that and then break
@@ -351,24 +364,36 @@ if (!is.null(opt$phenotype)) {
 # If we have the mapping file provided then we need to read that in and 
 # store it in our state. Otherwise we will just set the attribute to NULL
 if (!is.null(opt$`map-file`)) {
-  print(paste0("Loading in mappings fromt eh mapping file: ", opt$`map-file`))
-  runtime_state$map_hash <- load_map_file(opt$`map-file`)
+  print(paste0("Loading in mappings from the mapping file: ", opt$`map-file`))
+  return_val <- load_map_file(opt$`map-file`)
+
+  runtime_state$map_hash = return_val$forward_map
+  runtime_state$reverse_map_hash = return_val$reverse_map
 } else {
   runtime_state$map_hash <- NULL 
+  runtime_state$reverse_map_hash <- NULL
 }
 
 # Now we can read in the ibd_data.
 print(paste0("Loading in the IBD segment data: ", opt$ibd))
 
 # fread can handle .gz files
-runtime_state$ibd_df <- fread(opt$ibd, sep = "\t", header = FALSE)
+# runtime_state$ibd_df <- fread(opt$ibd, sep = "\t", header = FALSE)
+runtime_state$ibd_df <- fread(opt$ibd, sep = "\t", 
+            header = FALSE, 
+            col.names = c("pair_1", "hapID1", "pair_2", "hapID2", "chr", "start", "end", "length"),
+            colClasses=list(character = c(1,3)))
 
-colnames(runtime_state$ibd_df) <- c("pair_1", "hapID1", "pair_2", "hapID2", "chr", "start", "end", "length")
+# colnames(runtime_state$ibd_df) <- c("pair_1", "hapID1", "pair_2", "hapID2", "chr", "start", "end", "length")
 
+print("Filtering the ibd segments to our cohort of interest")
 # Now lets filter our datatable for our cohort of interest.
 # Only do this if the phenotype file was provided
 if (!is.null(runtime_state$pheno_hash)) {
   cohort_ids <- ls(runtime_state$pheno_hash)
+  if (!is.null(runtime_state$map_hash)) {
+    cohort_ids = map_ids(cohort_ids, runtime_state$reverse_map_hash)
+  }
   runtime_state$ibd_df <- runtime_state$ibd_df[pair_1 %in% cohort_ids & pair_2 %in% cohort_ids]
 }
 
