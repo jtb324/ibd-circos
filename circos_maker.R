@@ -50,6 +50,42 @@ load_pheno_file <- function(pheno_filepath) {
   return(pheno_hash)
 }
 
+# Reading in the mapping file so that we can map ids in the DRIVE file. 
+# This is only needed if our ids in the driv file are different the the 
+# ids used in the project. We will return the hash were the keys are the 
+# original id and the values are the mapped ids
+load_map_file <- function(mapping_file) {
+  map_hash <- new.env(hash = TRUE)
+
+  if (!file.exists(mapping_file)) {
+    stop(paste0("ERROR: The provided mapping file, " mapping_file, ", does not exist. Terminating program..."), call. = FALSE)
+  }
+  # On the file for streaming and then set on.exit so that the file closes at the end of the function
+  con <- file(mapping_file, "r")
+  on.exit(close(con))
+
+  line_counter <- 1
+  # This is basically a do-while loop
+  repeat {
+    lines <- readLines(con, n = 1, warn = FALSE)
+
+    split_line <- unlist(strsplit(trimws(lines), "\t"))
+
+    if (length(split_line) != 2) {
+      stop(paste0("ERROR: encountered a malformed line at line, ", line_counter, " : ", lines, ". Expected the first column to be the original ID and the second colum to be the ids that we wish to map values to"))
+    }
+
+    map_hash[[split_line[1]]] <- split_line[2]
+
+    line_counter <- line_counter + 1
+
+    if (length(lines) == 0) {
+      break
+    }
+  }
+  return(map_hash)
+}
+
 # We need to map the length column to a value that we can use to color the circos plot
 format_ibd_data_length <- function(ibd_dataframe) {
   df <- ibd_dataframe %>%
@@ -151,6 +187,20 @@ generate_circos_plots <- function(network_id, network_members, cases, runtime_st
   dev.off()
 }
 
+# Map our ids that we have read in to the new ids. Function takes an array of the current ids and then maps 
+# each id to a new value and returns that array. We return the new array
+map_network_ids <- function(current_ids, mapping_hash) {
+
+  new_array <- sapply(current_array, function(x) {
+    if (exists(x, envir = mapping_env)) {
+      return(mapping_hash[[x]])
+    } else {
+      stop(paste0("Missing a mapping id for participant, ", x, ". Please make sure every id has a mapping"))
+    }
+  })
+  return(new_array)
+}
+
 # main function that will read through the DRIVE networks file to generate a circos plot for each network
 process_network_file <- function(network_filepath, runtime_state) {
   if (!file.exists(network_filepath)) {
@@ -193,6 +243,12 @@ process_network_file <- function(network_filepath, runtime_state) {
     network_size <- as.integer(split_line[2])
     network_members <- unlist(strsplit(split_line[7], ","))
 
+    # If we have loaded in the mappings then we need to update the network 
+    # members list here
+    if (!is.null(runtime_state$map_hash)) {
+      network_members = map_network_ids(network_members, runtime_state$map_hash)
+    }
+
     # If we provided a network id then we only need to process that and then break
     if (!is.null(runtime_state$network_id)) {
       if (network_id == runtime_state$network_id) {
@@ -222,6 +278,10 @@ option_list <- list(
   make_option(c("-p", "--phenotype"),
     type = "character", default = NULL,
     help = "Tab separated text file that can be used to classify individuals with an affection status. The file should have two columns: 'GRID' and 'Status'.", metavar = "character"
+  ),
+  make_option(c("-m", "--map-file"),
+    type = "character", default = NULL,
+    help = "Filepath to a tab separated text file that maps our ids to new values. We expect 2 columns where the first column is the original id and the second column is the new id. We also expect a header", metavar = "character"
   ),
   make_option("--id",
     type = "character", default = NULL,
@@ -286,6 +346,15 @@ if (!is.null(opt$phenotype)) {
 } else {
   print(paste0("No phenotype file provided. Using the case status within the DRIVE file column: ", opt$`pheno-column`))
   runtime_state$pheno_hash <- NULL
+}
+
+# If we have the mapping file provided then we need to read that in and 
+# store it in our state. Otherwise we will just set the attribute to NULL
+if (!is.null(opt$`map-file`)) {
+  print(paste0("Loading in mappings fromt eh mapping file: ", opt$`map-file`))
+  runtime_state$map_hash <- load_map_file(opt$`map-file`)
+} else {
+  runtime_state$map_hash <- NULL 
 }
 
 # Now we can read in the ibd_data.
