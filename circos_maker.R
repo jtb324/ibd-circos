@@ -216,11 +216,21 @@ generate_circos_plots <- function(network_id, network_members, cases, runtime_st
   # are in the chart
   network_segments <- format_ibd_data_length(network_segments)
 
-  lgd_lines1 <- Legend(
-    at = c("Case", "control"),
-    legend_gp = gpar(fill = c("dark red", "dark gray")), labels_gp = gpar(fontsize = 15), title_position = "topleft",
-    title = "Status"
-  )
+  # If the user provides either a phenotype file or determines cases from the drive file 
+  # then we need to add a upper legend that has the case/control colors. Otherwise, we only 
+  # need to generate the legend for the colors based on IBD segment length. The following 
+  # lines construct a list of legend objects and then passes that to the pack legend call 
+  # that will dynamically construct the legend
+  lgd_obj_list = list()
+
+  if (!is.null(runtime_state$pheno_hash) || !is.null(cases)) {
+    lgd_lines1 <- Legend(
+      at = c("Case", "control"),
+      legend_gp = gpar(fill = c("dark red", "dark gray")), labels_gp = gpar(fontsize = 15), title_position = "topleft",
+      title = "Status"
+    )
+    lgd_obj_list[[length(lgd_obj_list)+1]] <- lgd_lines1
+  } 
 
   lgd_lines2 <- Legend(
     at = c("> 10cM", "> 3cM", "> 1cM"), type = "lines",
@@ -228,7 +238,9 @@ generate_circos_plots <- function(network_id, network_members, cases, runtime_st
     title = "IBD Segment length"
   )
 
-  lgd_list <- packLegend(lgd_lines1, lgd_lines2)
+  lgd_obj_list[[length(lgd_obj_list)+1]] <- lgd_lines2
+
+  lgd_list <- do.call(packLegend, lgd_obj_list)
 
   output_name <- paste(runtime_state$output, "/", network_id, "_circos_plot.png", sep = "")
 
