@@ -203,7 +203,14 @@ generate_circos_plots <- function(network_id, network_members, cases, runtime_st
     fwrite(network_segments, segments_output_name, sep = "\t")
   }
 
-  grid.col <- generate_grid_colors(network_members, runtime_state$pheno_hash, cases)
+  # We need to map the ids if we have provided a hash
+  if (!is.null(runtime_state$map_hash)) {
+    mapped_ids = map_ids(network_members, runtime_state$map_hash)
+  } else {
+    mapped_ids = network_id
+  }
+
+  grid.col <- generate_grid_colors(mapped_ids, runtime_state$pheno_hash, cases)
 
   # Add a column "col" and "width" that tell what color the chords
   # are in the chart
@@ -317,7 +324,8 @@ process_network_file <- function(network_filepath, runtime_state) {
       runtime_state$mapped_id_list = NULL
     }
 
-    # If we provided a network id then we only need to process that and then break
+    # If we provided a network id then we only need to process that and 
+    # then break
     if (!is.null(runtime_state$network_id)) {
       if (network_id == runtime_state$network_id) {
         generate_circos_plots(network_id, network_members, cases, runtime_state)
