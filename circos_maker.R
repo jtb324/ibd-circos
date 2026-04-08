@@ -2,6 +2,7 @@ suppressPackageStartupMessages(library(ComplexHeatmap))
 suppressPackageStartupMessages(library(circlize))
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(Cairo))
 library(stringr)
 library(optparse)
 
@@ -142,6 +143,52 @@ get_case_col_indx <- function(header_line, pheno_col_name) {
   return(col_indx)
 }
 
+#' Parse Region String
+#'
+#' Splits a genomic region string (format: chrom:start-end) into its components.
+#'
+#' @param region_string Character string. The region to parse (e.g., "1:1000000-2000000").
+#'
+#' @return A named list with `chrom`, `start`, and `end`.
+#' @export
+parse_region_string <- function(region_string) {
+  # Expected format: chrom:start-end
+  split_chrom <- unlist(strsplit(region_string, ":"))
+  if (length(split_chrom) != 2) {
+    stop(paste0("ERROR: region string, ", region_string, ", is not in the correct format. Expected 'chrom:start-end'. Terminating program..."), call. = FALSE)
+  }
+
+  split_pos <- unlist(strsplit(split_chrom[2], "-"))
+  if (length(split_pos) != 2) {
+    stop(paste0("ERROR: region string, ", region_string, ", is not in the correct format. Expected 'chrom:start-end'. Terminating program..."), call. = FALSE)
+  }
+
+  return(list(
+    chrom = split_chrom[1],
+    start = as.numeric(split_pos[1]),
+    end = as.numeric(split_pos[2])
+  ))
+}
+
+#' Filter IBD segments by genomic region
+#'
+#' Filters IBD segments that overlap with either the start or the end position of a specified region.
+#' Note: Chromosome matching is not performed per instructions.
+#'
+#' @param ibd_df data.table. The IBD segment data.
+#' @param region_list List. A named list with `start` and `end`.
+#'
+#' @return A filtered data.table.
+#' @export
+filter_ibd_by_region <- function(ibd_df, region_list) {
+  # OR logic: segment must overlap region start OR region end
+  # Overlap region start: segment_start <= region_start AND segment_end >= region_start
+  # Overlap region end: segment_start <= region_end AND segment_end >= region_end
+  filtered_df <- ibd_df[(start <= region_list$start & end >= region_list$start) |
+                        (start <= region_list$end & end >= region_list$end)]
+  return(filtered_df)
+}
+
 #' Generate Grid Colors
 #'
 #' Assigns colors to network members (grids) based on their phenotype status
@@ -183,9 +230,9 @@ generate_grid_colors <- function(network_grids, pheno_hash = NULL, case_list = N
 #'
 #' @return None. Saves a PNG file to the output directory.
 #' @export
-generate_circos_plots <- function(network_id, network_members, cases, runtime_state) {
-  # Filter IBD data for pairs where BOTH are in the network
-  network_segments <- runtime_state$ibd_df[pair_1 %in% network_members & pair_2 %in% network_members]
+generate_circos_plots <- function(network_id, network_members, cases, runtime_state, network_haps) {
+  # Filter IBD data for pairs where BOTH are in the network and both haplotypes are in the network_haps
+  network_segments <- runtime_state$ibd_df[pair_1 %in% network_members & pair_2 %in% network_members & pair_1_hap %in% network_haps & pair_2_hap %in% network_haps]
 
   if (!is.null(runtime_state$mapped_id_list)) {
     network_segments$pair_1 <- sapply(network_segments$pair_1, function(x) get(x, envir=runtime_state$map_hash))
@@ -242,10 +289,10 @@ generate_circos_plots <- function(network_id, network_members, cases, runtime_st
 
   lgd_list <- do.call(packLegend, lgd_obj_list)
 
-  output_name <- paste(runtime_state$output, "/", network_id, "_circos_plot.png", sep = "")
+  output_name <- paste(runtime_state$output, "/", network_id, "_circos_plot.svg", sep = "")
 
   print(paste("writing output to", output_name, sep = " "))
-  png(output_name, height = 12, width = 15, units = "in", res = 500)
+  CairoSVG(output_name, height = 12, width = 15)
 
   # chordDiagram expects a dataframe with [from, to, value] and optional colors
   circos.clear()
@@ -325,6 +372,8 @@ process_network_file <- function(network_filepath, runtime_state) {
     network_id <- split_line[1]
     network_size <- as.integer(split_line[2])
     network_members <- unlist(strsplit(split_line[7], ","))
+    # Extract the ID.haplotype members for the current network from the 8th column
+    network_haps <- unlist(strsplit(split_line[8], ","))
 
     # If we have loaded in the mappings then we need to update the network 
     # members list here. The order of the mapped ids will be the same as 
@@ -340,13 +389,13 @@ process_network_file <- function(network_filepath, runtime_state) {
     # then break
     if (!is.null(runtime_state$network_id)) {
       if (network_id == runtime_state$network_id) {
-        generate_circos_plots(network_id, network_members, cases, runtime_state)
+        generate_circos_plots(network_id, network_members, cases, runtime_state, network_haps)
         break
       }
     } else {
       # We also need to make sure that the networks are above the size threshold
       if (network_size >= runtime_state$min_network_size) {
-        generate_circos_plots(network_id, network_members, cases, runtime_state)
+        generate_circos_plots(network_id, network_members, cases, runtime_state, network_haps)
       }
     }
   }
@@ -355,6 +404,7 @@ process_network_file <- function(network_filepath, runtime_state) {
 ##### Script technically will start running here #############
 # Next lines until "parse_args()" deal with the CLI interface
 option_list <- list(
+  
   make_option(c("-n", "--network"),
     type = "character", default = NULL,
     help = "Input network file", metavar = "character"
@@ -366,6 +416,11 @@ option_list <- list(
   make_option(c("-p", "--phenotype"),
     type = "character", default = NULL,
     help = "Tab separated text file that can be used to classify individuals with an affection status. The file should have two columns: 'GRID' and 'Status'.", metavar = "character"
+  ),
+  make_option(c("-r", "--region"),
+    type = "character", default = NULL,
+    help = "Genomic region to filter the IBD segments for. We will filter for segments that overlap the region of interest. This flag should be of the style X:Start-End representing the chromosome number, start position, and end position.",
+    metavar = "character"
   ),
   make_option(c("-m", "--map-file"),
     type = "character", default = NULL,
@@ -411,9 +466,9 @@ runtime_state <- list(
 )
 
 # If the user didn't pass any arguments then we need to print the help message
-if (is.null(opt$network) || is.null(opt$ibd)) {
+if (is.null(opt$network) || is.null(opt$ibd) || is.null(opt$region)) {
   print_help(opt_parser)
-  stop("Both --network and --ibd arguments are required.\n", call. = FALSE)
+  stop("The --network, --ibd, and --region arguments are required.\n", call. = FALSE)
 }
 
 # Check and make sure that the phenotype file and pheno-column arguments
@@ -471,6 +526,17 @@ if (!is.null(runtime_state$pheno_hash)) {
   }
   runtime_state$ibd_df <- runtime_state$ibd_df[pair_1 %in% cohort_ids & pair_2 %in% cohort_ids]
 }
+
+# Filter for segments that overlap the region of interest
+print(paste0("Filtering for segments that overlap the region: ", opt$region))
+region_info <- parse_region_string(opt$region)
+runtime_state$ibd_df <- filter_ibd_by_region(runtime_state$ibd_df, region_info)
+
+# Add the new combined columns in the format pair_id.hapID
+runtime_state$ibd_df[, `:=`(
+  pair_1_hap = paste(pair_1, hapID1, sep = "."),
+  pair_2_hap = paste(pair_2, hapID2, sep = ".")
+)]
 
 ## Now we can iterate through the DRIVE file
 process_network_file(opt$network, runtime_state)
