@@ -11,3 +11,4 @@ dependencies:
   - r-data.table=1.17.8
   - r-tidyverse=2.0.0
   - r-r.utils=2.13.0
+  - r-cairo=1.7_0
